@@ -41,9 +41,12 @@ fileirf='/home/amilder/2014-08-08_IRF3.pt3.txt'
 I=genfromtxt(fileirf,names='lag,counts')
 data[0]=I['counts']
 new_data=data[0][:tend]
-data_subt=new_data-median(new_data)
-totalirf=data_subt/sum(data_subt)
-irf=totalirf[1:]
+
+def normalize_irf(irf):
+    centered = irf - median(irf)
+    return centered / sum(centered)
+
+irf=normalize_irf(new_data)[1:]
 
 data,d= readdata(files, data, tend)
 d=d.values()
@@ -95,7 +98,7 @@ def fitdata(files,data,tend,n,p0,xl):
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     print "converged with chi squared", chisq
     print "degrees of freedom, dof", dof
-    print "Reduced chisq (variance of rsiduals)", chisq/dof
+    print "Reduced chisq (variance of residuals)", chisq/dof
     print
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     #for i,pmin in enumerate(pfit):
@@ -143,7 +146,15 @@ def pre_modelglobal(x,g):
     curves  = (amp1[:,newaxis]*1e3) * exp(-((x[newaxis,:] - tshift) / tau1))
     curves += (amp2[:,newaxis]*1e3) * exp(-((x[newaxis,:] - tshift) / tau2))
     return curves
-        
+    
+def print_global(g):
+    per_curve = g[2:]
+    print 'taus = ', g[:2]
+    print 'offsets = ', per_curve[:15]
+    print 'amp1 = ', per_curve[15:30]
+    print 'amp2 = ', per_curve[30:45]
+    print
+
 def model_global(x,g,irf):
     """
     x is of shape (nPts,)
@@ -151,7 +162,8 @@ def model_global(x,g,irf):
     g is of shape (nCurves,)
     returns (nCurves,nPts)
     """
-    per_curve = x[2:]
+    per_curve = g[2:]
+    print_global(g)
     offsets = per_curve[0:len(files)]
     curves = pre_modelglobal(x,g)
     models = []
@@ -168,26 +180,38 @@ def errfunc2(g,x,y,irf):
     g is of shape (nCurves,)
     returns (nCurves*nPts)
     """
-    print g
     return ((y - model_global(x,g,irf)) / sqrt(y)).flatten()
 
-def globalfit(yl,tend,g0,xl,irf):
-    pfit,cov,infodict,mesg,ier=leastsq(errfunc2,g0,args=(xl[:],yl,irf),full_output=1)
-    chisq=(infodict['fvec']**2).sum()
-    dof=len(xl[start:])-len(pfit) #
+def globalfit(yl,g0,xl,irf):
+    """
+    yl is of shape (nCurves,nPts)
+    g0 is of shape (2+3*nCurves,)
+    xl is of shape (nPts,)
+    irf is of shape (nPts,)
+    """
+    pfit,cov,infodict,mesg,ier=leastsq(errfunc2,g0,args=(xl,yl,irf),
+            full_output=1)
     
-    #pname=['A0','A1','tau0','tau1','offset']
-    #print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-    #print "converged with chi squared", chisq
-    #print "degrees of freedom, dof", dof
-    #print "Reduced chisq (variance of rsiduals)", chisq/dof
-    #print
-    #print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-    ##for i,pmin in enumerate(pfit):
-    ##  print "%2i % -10s %12f+/- %10f "%(i,pname[i],pmin,sqrt(cov[i,i])*sqrt(chisq/dof))
-    #   #,sqrt(cov[i,i])*sqrt(chisq/dof))+/- %10f
+    for i,(fname,y,ym) in enumerate(zip(files, yl, model_global(xl,pfit,irf))):
+        resid = (y - ym) / sqrt(y)
+        chisq = sum(resid**2)
+        dof = len(resid) - (2+3)
+        print '%s:' % fname
+        print '  chi^2          = %10f' % chisq
+        print '  dof            = %10f' % dof
+        print '  reduced chi^2  = %10f' % (chisq/dof)
+
+    chisq=(infodict['fvec']**2).sum()
+    dof=np.product(yl.shape) - len(pfit) # degrees of freedom
+    print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    print "converged with chi squared", chisq
+    print "degrees of freedom, dof", dof
+    print "Reduced chisq (variance of residuals)", chisq/dof
+    print
+    print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     #for i,pmin in enumerate(pfit):
-    #   print  i,pname[i],pmin
+    #  print "%2i % -10s %12f+/- %10f "%(i,pname[i],pmin,sqrt(cov[i,i])*sqrt(chisq/dof))
+       #,sqrt(cov[i,i])*sqrt(chisq/dof))+/- %10f
     return pfit
 
 def plot_global(yl, p, xl, irf):
@@ -198,8 +222,8 @@ def plot_global(yl, p, xl, irf):
     ax1=subplot2grid((4,1),(0,0),rowspan=3)
     #ax1.plot(xl[:],irf[:])
     for n in range(0,15):
-        ax1.plot(xl[:],yl[n],color='k',linewidth=3)#
-        ax1.plot(xl[:],final_model[n],color='r',linewidth=2)#
+        ax1.plot(xl[:],yl[n],'+',color='k',linewidth=3, zorder=1)
+        ax1.plot(xl[:],final_model[n],'-',color='r',linewidth=2, zorder=2)
     #ax1.set_xlim(2.5,10)
     ax1.set_ylabel('intensity (arb. units)',fontsize=18)
     ax1.yaxis.set_tick_params(labelsize=15)
@@ -207,7 +231,7 @@ def plot_global(yl, p, xl, irf):
     
     ax2=subplot2grid((4,1),(3,0),rowspan=1)
     for n in range(0,15):
-        ax2.plot(xl[:],(final_model[n]-yl[n]),'.',color='k')#
+        ax2.plot(xl[:],(final_model[n]-yl[n]),',',color='k')#
     ax2.axhline(y=0)
     ax2.set_ylim(-300,300)
     #ax2.set_yticks([-200,-100,0,100,200])
@@ -219,42 +243,47 @@ def plot_global(yl, p, xl, irf):
     
     fig.show()
 
-pfit={}
-tau1s=zeros(15)
-tau2s=zeros(15)
-a1=zeros(15)
-a2=zeros(15)
-for n in range(1,1):
-    a = fitdata(files,data,tend,n,p0,xl)
-    pfit[n] = a
-    tau1s[n-1]= a[2]
-    tau2s[n-1]= a[3]
-    a1[n-1]= a[0]
-    a2[n-1]=a[1]
+#pfit={}
+#tau1s=zeros(15)
+#tau2s=zeros(15)
+#a1=zeros(15)
+#a2=zeros(15)
+#for n in range(1,1):
+#    a = fitdata(files,data,tend,n,p0,xl)
+#    pfit[n] = a
+#    tau1s[n-1]= a[2]
+#    tau2s[n-1]= a[3]
+#    a1[n-1]= a[0]
+#    a2[n-1]=a[1]
 
-fig=figure()
-xs=([35,35,35,45,45,45,55,55,55,65,65,65,75,75,75])
-plot(xs,tau1s, 'ro', label="tau 1")
-plot(xs,tau2s, 'bv', label="tau 2")
-legend()
+#fig=figure()
+#xs=([35,35,35,45,45,45,55,55,55,65,65,65,75,75,75])
+#plot(xs,tau1s, 'ro', label="tau 1")
+#plot(xs,tau2s, 'bv', label="tau 2")
+#legend()
 #fig.show()
 
-fig=figure()
-plot(xs,a1, 'ro', label="A 1")
-plot(xs,a2, 'bv', label="A 2")
-legend()
+#fig=figure()
+#plot(xs,a1, 'ro', label="A 1")
+#plot(xs,a2, 'bv', label="A 2")
+#legend()
 #fig.show()
 
-# g is offsets+amp1+amp2+[tau1,tau2]
+# g is [tau1,tau2]+offsets+amp1+amp2
 g = ones(3*len(files) + 2)
 for i,file in enumerate(d):
-    g[i] = d.min()
+    g[i+2] = d.min() # offset
 g[0]=3.8  # tau1
 g[1]=0.2  # tau2
 plot_global(d, g, xl, irf)
-dec = 4 # decimation factor
-gfit=globalfit(d[:,::dec],tend,g,xl[::dec],irf[::dec])
+
+# Rough optimization
+dec = 5 # decimation factor
+gfit=globalfit(d[:,::dec],g,xl[::dec],normalize_irf(irf[::dec]))
+print_global(gfit)
 plot_global(d, gfit, xl, irf)
-gfit=globalfit(d,tend,gfit,xl,irf)
+gfit=globalfit(d,gfit,xl,irf)
 plot_global(d, gfit, xl, irf)
 print gfit
+
+show()
