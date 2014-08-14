@@ -68,23 +68,23 @@ p0[4]=0.
 #p0[5]=15.
 
 def pre_model(x,p):
-	term0= (p[0]*1e3) * exp(-((x-tshift)/p[2]))
-	term1= (p[1]*1e3) * exp(-((x-tshift)/p[3]))
-	#term2= (p[2]*1e4) * exp(-((x-tshift)/p[5]))
-	#term3= abs(par[3]) * exp(-(x-par[6])/(par[7]))
-	fitfunc= term0+term1
-	return fitfunc
-	
-	
+    term0= (p[0]*1e3) * exp(-((x-tshift)/p[2]))
+    term1= (p[1]*1e3) * exp(-((x-tshift)/p[3]))
+    #term2= (p[2]*1e4) * exp(-((x-tshift)/p[5]))
+    #term3= abs(par[3]) * exp(-(x-par[6])/(par[7]))
+    fitfunc= term0+term1
+    return fitfunc
+
 def errfunc(p,x,y):
-	model=real(ifft(fft(pre_model(x,p[:4])) * fft(irf[:]))) + p[4]
-	residual=(y[:]-model[:]) / sqrt(y[:])
-	#residual=asarray(residual).reshape(-1)
-	return residual
+    model=real(ifft(fft(pre_model(x,p[:4])) * fft(irf[:]))) + p[4]
+    residual=(y[:]-model[:]) / sqrt(y[:])
+    #residual=asarray(residual).reshape(-1)
+    return residual
 
 def fitdata(files,data,tend,n,p0,xl):
     yl=data[n]
-    pfit,cov,infodict,mesg,ier=leastsq(errfunc,p0,args=(xl[:],yl[:]),full_output=1)
+    pfit,cov,infodict,mesg,ier=leastsq(errfunc,p0,args=(xl[:],yl[:]),
+            full_output=1)
     chisq=(infodict['fvec']**2).sum()
     dof=len(xl[start:])-len(pfit) #
     
@@ -99,10 +99,10 @@ def fitdata(files,data,tend,n,p0,xl):
     print
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     #for i,pmin in enumerate(pfit):
-    #	print "%2i % -10s %12f+/- %10f "%(i,pname[i],pmin,sqrt(cov[i,i])*sqrt(chisq/dof))
-    	#,sqrt(cov[i,i])*sqrt(chisq/dof))+/- %10f
+    #   print "%2i % -10s %12f+/- %10f "%(i,pname[i],pmin,sqrt(cov[i,i])*sqrt(chisq/dof))
+        #,sqrt(cov[i,i])*sqrt(chisq/dof))+/- %10f
     for i,pmin in enumerate(pfit):
-    	print  i,pname[i],pmin
+        print  i,pname[i],pmin
     
     fig=figure()
     suptitle(files[n-1])
@@ -143,7 +143,7 @@ def pre_modelglobal(x,g):
     curves  = (amp1[:,newaxis]*1e3) * exp(-((x[newaxis,:] - tshift) / tau1))
     curves += (amp2[:,newaxis]*1e3) * exp(-((x[newaxis,:] - tshift) / tau2))
     return curves
-	
+        
 def model_global(x,g,irf):
     """
     x is of shape (nPts,)
@@ -156,7 +156,7 @@ def model_global(x,g,irf):
     curves = pre_modelglobal(x,g)
     models = []
     for (offset, m) in zip(offsets, curves):
-	model = real(np.fft.ifft(np.fft.fft(m) * np.fft.fft(irf)))
+        model = real(np.fft.ifft(np.fft.fft(m) * np.fft.fft(irf)))
         model += offset
         models.append(model)
     return np.array(models)
@@ -184,10 +184,10 @@ def globalfit(yl,tend,g0,xl,irf):
     #print
     #print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     ##for i,pmin in enumerate(pfit):
-    ##	print "%2i % -10s %12f+/- %10f "%(i,pname[i],pmin,sqrt(cov[i,i])*sqrt(chisq/dof))
-    #	#,sqrt(cov[i,i])*sqrt(chisq/dof))+/- %10f
+    ##  print "%2i % -10s %12f+/- %10f "%(i,pname[i],pmin,sqrt(cov[i,i])*sqrt(chisq/dof))
+    #   #,sqrt(cov[i,i])*sqrt(chisq/dof))+/- %10f
     #for i,pmin in enumerate(pfit):
-    #	print  i,pname[i],pmin
+    #   print  i,pname[i],pmin
     return pfit
 
 def plot_global(yl, p, xl, irf):
