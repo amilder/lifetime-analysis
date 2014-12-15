@@ -6,7 +6,9 @@ from scipy import *
 from scipy.optimize import leastsq
 import glob
 import os
-
+from lmfit import Parameters
+import argparse
+#rewriting as variable using lmfit parameter
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #create arrays for files and data as well as create the ph array and starting and ending points for reading data
 files={}
@@ -20,26 +22,42 @@ data_norm={}
 start=0.
 tend=3120
 tshift= 0.0
+
+parser = argparse.ArgumentParser(description='Fit lifetime data')
+parser.add_argument('folder', type=str, help='Folder containing data')
+parser.add_argument('irffile', type=str, help='IRF file')
+parser.add_argument('-g', '--global-lifetimes', default=0, type=int, help='Set the number of global decay lifetimes')
+parser.add_argument('-l', '--lifetimes', default=0, type=int, help='Set the number of local decay lifetimes')
+parser.add_argument('-t', '--time-shift', action='store_true', default=False, help='Set to fit time shift')
+parser.add_argument('-b', '--background', action='store_true', default=False, help='Set to fit background')
+args = parser.parse_args()
+
+assert args.global_lifetimes > 0 or args.lifetimes > 0
+
+
+#phs=input("Please enter a list of phs ")
 #phs=([35,35,35,40,40,40,45,45,45,50,50,50,54,54,54,56,56,56,60,60,60,65,65,65,70,70,70,75,75,75,80,80,80])
-phs=([25,35,45,55,55,65,75,75,65,55,55,45,35,25])    #need to find a way to make this automatic
+#phs=([25,35,45,55,55,65,75,75,65,55,55,45,35,25])    #need to find a way to make this automatic
 
 #imports all files from a folder(basepath) and sorts them alphabeticaly then prints the list
 #os.chdir("/home/amilder/2014-08-08")
-basePath = '/home/amilder/2014-11-13/2014-11-13/2014-11-13/'
+#basePath = '/home/amilder/2014-11-13/2014-11-13/2014-11-13/'
+#basePath = input("Please enter folder containing data ")
+basePath = args.folder
 files = glob.glob(basePath+'*.txt')
 files.sort()
-print files
+#print files
 index=0
 
 #2 different options for how many of the files to use
-#num_of_files_used=len(files)
-num_of_files_used=14
+num_of_files_used=len(files)
+#num_of_files_used=14
 
 #method readdata reads a file with 2 columns and makes the second column into a dictionary d, data
 #in this dictionary the n is the location of the array of counts
 def readdata (files, data, tend, num_used):
     for n in range (0,num_used):
-        print n
+        #print n
         N=genfromtxt(files[n], names='lag, counts')
         d[n]=N['counts'][1:tend]
         data[n+1] = d[n]
@@ -50,7 +68,9 @@ def readdata (files, data, tend, num_used):
 
 # data[0] is IRF data, data[i] (i>0) are the data taken from fluorescent samples.
 #reads an IRF and adds that to the data dictionary
-fileirf='/home/amilder/2014-11-13/2014-11-13/run001.pt3.txt'
+#fileirf='/home/amilder/2014-11-13/2014-11-13/run001.pt3.txt'
+#fileirf=input("Please enter the irf file ")
+fileirf= args.irffile
 I=genfromtxt(fileirf,names='lag,counts')
 data[0]=I['counts']
 new_data=data[0][:tend]
@@ -82,14 +102,51 @@ fig.show()
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #fit coefficients starting
-p0=zeros(7)
-p0[0]=.5
-p0[1]=.5
-p0[2]=2.0
-p0[3]=4.0
-p0[4]=0.5
-p0[5]=.5
-p0[6]=40
+#p0=zeros(7)
+#p0[0]=.5
+#p0[1]=.5
+#p0[2]=2.0
+#p0[3]=4.0
+#p0[4]=0.5
+#p0[5]=.5
+#p0[6]=40
+lp0= Parameters()
+lp0.add('amp1' , value =0.0 , vary=False)
+lp0.add('amp2' , value =0.0 , vary=False)
+lp0.add('tau1' , value =2.0 , vary=True)
+lp0.add('tau2' , value =4.0 , vary=True)
+lp0.add('amp3' , value =0.0 , vary=False)
+lp0.add('tau3' , value =.5 , vary=True)
+lp0.add('tshift' , value =0.0 , vary=False)
+lp0.add('offset' , value =40.0 , vary=False)
+gp0= Parameters()
+gp0.add('amp1' , value =0.0 , vary=False)
+gp0.add('amp2' , value =0.0 , vary=False)
+gp0.add('tau1' , value =2.0 , vary=True)
+gp0.add('tau2' , value =4.0 , vary=True)
+gp0.add('amp3' , value =0.0 , vary=False)
+gp0.add('tau3' , value =.5 , vary=True)
+gp0.add('tshift' , value =0.0 , vary=False)
+gp0.add('offset' , value =40.0 , vary=False)
+
+if args.global_lifetimes>=1:
+    gp0['amp1'].vary=True
+if args.global_lifetimes>=2:
+    gp0['amp2'].vary=True
+if args.global_lifetimes>=3:
+    gp0['amp3'].vary=True
+if args.lifetimes>=1:
+    lp0['amp1'].vary=True
+if args.lifetimes>=2:
+    lp0['amp2'].vary=True
+if args.lifetimes>=3:
+    lp0['amp3'].vary=True
+if args.time_shift:
+    lp0['tshift'].vary=True
+    gp0['tshift'].vary=True
+if args.background:
+    lp0['offset'].vary=True
+    gp0['offset'].vary=True
 
 #the model of 3 exponentials that we are using, the method evaluates the model for all x's givin
 def pre_model(x,p):
@@ -276,65 +333,70 @@ def plot_global(yl, p, xl, irf):
     
     fig.show()
 
+
+
 pfit={}
 le=num_of_files_used-1
 tau1s=zeros(le)
 tau2s=zeros(le)
 a1=zeros(le)
 a2=zeros(le)
-#for n in range(1,le+1):
-#    a = fitdata(files,data,tend,n,p0,xl)
-#    pfit[n] = a
-#    tau1s[n-1]= a[2]
-#    tau2s[n-1]= a[3]
-#    a1[n-1]= a[0]
-#    a2[n-1]=a[1]
 
-#fig=figure()
-#plot(phs,tau1s, 'ro', label="tau 1")
-#plot(phs,tau2s, 'bv', label="tau 2")
-#legend()
-#fig.show()
+if args.lifetimes>0:
+    for n in range(1,le+1):
+        a = fitdata(files,data,tend,n,p0,xl)
+        pfit[n] = a
+        tau1s[n-1]= a[2]
+        tau2s[n-1]= a[3]
+        a1[n-1]= a[0]
+        a2[n-1]=a[1]
 
-#fig=figure()
-#plot(phs,a1, 'ro', label="A 1")
-#plot(phs,a2, 'bv', label="A 2")
-#legend()
-#fig.show()
+    fig=figure()
+    plot(phs,tau1s, 'ro', label="tau 1")
+    plot(phs,tau2s, 'bv', label="tau 2")
+    legend()
+    fig.show()
+
+    fig=figure()
+    plot(phs,a1, 'ro', label="A 1")
+    plot(phs,a2, 'bv', label="A 2")
+    legend()
+    fig.show()
 
 # g is [tau1,tau2,tau3]+offsets+amp1+amp2+amp3
-g = ones(4*num_of_files_used + 4)
-for i,file in enumerate(d):
-    g[i+3] = d.min() # offset
-g[0]=4  # tau1
-g[1]=2  # tau2
-g[2]=.3
-g[3]=.5
-plot_global(d, g, xl, irf)
+if args.global_lifetimes>0:
+    g = ones(4*num_of_files_used + 4)
+    for i,file in enumerate(d):
+        g[i+3] = d.min() # offset
+    g[0]=4  # tau1
+    g[1]=2  # tau2
+    g[2]=.3
+    g[3]=.5
+    plot_global(d, g, xl, irf)
 
-# Rough optimization
-dec = 3 # decimation factor
-gfit,redchisqs=globalfit(d[:,::dec],g,xl[::dec],normalize_irf(irf[::dec]))
-print_global(gfit)
-plot_global(d, gfit, xl, irf)
-#gfit=globalfit(d,gfit,xl,irf)
-#plot_global(d, gfit, xl, irf)
-#print gfit
+    # Rough optimization
+    dec = 3 # decimation factor
+    gfit,redchisqs=globalfit(d[:,::dec],g,xl[::dec],normalize_irf(irf[::dec]))
+    print_global(gfit)
+    plot_global(d, gfit, xl, irf)
+    #gfit=globalfit(d,gfit,xl,irf)
+    #plot_global(d, gfit, xl, irf)
+    #print gfit
 
-(tau1, tau2) = gfit[:2]
-per_curve = gfit[4:]
-amp1 = per_curve[num_of_files_used:2*num_of_files_used]
-amp2 = per_curve[2*num_of_files_used:3*num_of_files_used]
+    (tau1, tau2) = gfit[:2]
+    per_curve = gfit[4:]
+    amp1 = per_curve[num_of_files_used:2*num_of_files_used]
+    amp2 = per_curve[2*num_of_files_used:3*num_of_files_used]
 
-fig1=figure()
-scatter(phs, amp1*tau1 / (amp1*tau1+amp2*tau2))
-xlabel('pH x10')
-ylabel('% of dye in basic state')
-fig1.show()
+    fig1=figure()
+    scatter(phs, amp1*tau1 / (amp1*tau1+amp2*tau2))
+    xlabel('pH x10')
+    ylabel('% of dye in basic state')
+    fig1.show()
 
-print redchisqs
-fig2=figure()
-scatter(phs, redchisqs)
-xlabel('pH x10')
-ylabel('X2')
-fig2.show()
+    print redchisqs
+    fig2=figure()
+    scatter(phs, redchisqs)
+    xlabel('pH x10')
+    ylabel('X2')
+    fig2.show()
